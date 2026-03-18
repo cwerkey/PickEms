@@ -23,4 +23,16 @@ function requireAdmin(req, res, next) {
   });
 }
 
-module.exports = { requireAuth, requireAdmin };
+// Strip any keys not in the allowed list from req.body
+function permit(...allowed) {
+  return (req, res, next) => {
+    if (req.body && typeof req.body === 'object') {
+      Object.keys(req.body).forEach(key => {
+        if (!allowed.includes(key)) delete req.body[key];
+      });
+    }
+    next();
+  };
+}
+
+module.exports = { requireAuth, requireAdmin, permit };
