@@ -14,14 +14,14 @@ export default function Navbar() {
     setMenuOpen(false);
   };
 
-  const navLinks = [
+const navLinks = [
     { to: '/', label: 'Events' },
     { to: '/alltime', label: 'All-Time' },
     ...(user?.role === 'admin' ? [
       { to: '/admin', label: 'Admin' },
       { to: '/admin/users', label: 'Users' },
     ] : []),
-    { to: '/settings', label: 'Settings' },
+    { to: '/profile', label: 'Profile' },
   ];
 
   return (
