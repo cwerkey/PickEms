@@ -71,17 +71,24 @@ db.exec(`
     joined_at TEXT DEFAULT (datetime('now')),
     UNIQUE(event_id, user_id)
   );
+
+  CREATE TABLE IF NOT EXISTS join_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending',
+    requested_at TEXT DEFAULT (datetime('now')),
+    resolved_at TEXT,
+    UNIQUE(event_id, user_id)
+  );
 `);
 
-// Migration: seed event_participants from existing picks so old data still works
+// Migrate existing picks to participants
 const participantCount = db.prepare('SELECT COUNT(*) as c FROM event_participants').get().c;
 if (participantCount === 0) {
   const existingPicks = db.prepare('SELECT DISTINCT user_id, event_id FROM picks').all();
   const insert = db.prepare('INSERT OR IGNORE INTO event_participants (event_id, user_id) VALUES (?, ?)');
-  const migrate = db.transaction(() => {
-    for (const p of existingPicks) insert.run(p.event_id, p.user_id);
-  });
-  migrate();
+  db.transaction(() => { for (const p of existingPicks) insert.run(p.event_id, p.user_id); })();
 }
 
 module.exports = db;
