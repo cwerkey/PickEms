@@ -10,7 +10,6 @@ router.post('/login', async (req, res) => {
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password required' });
   }
-
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username.toLowerCase());
   if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
@@ -30,7 +29,41 @@ router.get('/me', requireAuth, (req, res) => {
   res.json(user);
 });
 
-// Setup first admin (only works if no admin exists)
+// Update own profile / password
+router.put('/me', requireAuth, async (req, res) => {
+  const { display_name, username, current_password, new_password } = req.body;
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  if (new_password) {
+    if (!current_password) return res.status(400).json({ error: 'Current password required' });
+    const valid = await comparePassword(current_password, user.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+
+  const newHash = new_password ? await hashPassword(new_password) : user.password_hash;
+
+  try {
+    db.prepare(`UPDATE users SET
+      display_name = COALESCE(?, display_name),
+      username = COALESCE(?, username),
+      password_hash = ?,
+      updated_at = datetime('now')
+      WHERE id = ?`
+    ).run(display_name || null, username ? username.toLowerCase() : null, newHash, req.user.id);
+
+    const updated = db.prepare(
+      'SELECT id, username, display_name, role FROM users WHERE id = ?'
+    ).get(req.user.id);
+    res.json(updated);
+  } catch (e) {
+    if (e.message.includes('UNIQUE')) return res.status(400).json({ error: 'Username already taken' });
+    throw e;
+  }
+});
+
+// Setup first admin
 router.post('/setup', async (req, res) => {
   const { username, password, display_name, setup_key } = req.body;
   if (setup_key !== process.env.ADMIN_SETUP_KEY) {
