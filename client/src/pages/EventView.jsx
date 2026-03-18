@@ -15,7 +15,7 @@ export default function EventView() {
   const [myPicks, setMyPicks] = useState({});
   const [leaderRefresh, setLeaderRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('picks');
+  const [tab, setTab] = useState('leaderboard');
 
   const load = useCallback(async () => {
     try {
@@ -37,7 +37,6 @@ export default function EventView() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Auto-refresh leaderboard every 15s
   useEffect(() => {
     const i = setInterval(() => setLeaderRefresh(r => r + 1), 15000);
     return () => clearInterval(i);
@@ -46,7 +45,6 @@ export default function EventView() {
   const handlePick = async (categoryId, nomineeId) => {
     if (event?.is_locked) return;
     const prev = myPicks[categoryId];
-    // Optimistic update
     setMyPicks(p => ({ ...p, [categoryId]: { ...p[categoryId], nominee_id: nomineeId, category_id: categoryId } }));
     try {
       await api.savePick({ event_id: parseInt(id), category_id: categoryId, nominee_id: nomineeId });
@@ -54,7 +52,6 @@ export default function EventView() {
     } catch (e) {
       toast.error(e.message);
       setMyPicks(p => ({ ...p, [categoryId]: prev }));
-      // reload in case event got locked
       load();
     }
   };
@@ -64,7 +61,6 @@ export default function EventView() {
       <div style={{ color: 'var(--text-muted)' }}>Loading event...</div>
     </div>
   );
-
   if (!event) return null;
 
   const totalCats = event.categories?.length || 0;
@@ -98,8 +94,11 @@ export default function EventView() {
       </div>
 
       {/* Tab Nav */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
-        {['picks', 'leaderboard'].map(t => (
+      <div style={{
+        display: 'flex', gap: 4, marginBottom: 20,
+        borderBottom: '1px solid var(--border)', paddingBottom: 0,
+      }}>
+        {['leaderboard', 'picks'].map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
             background: 'none', border: 'none',
             padding: '10px 16px',
@@ -107,8 +106,7 @@ export default function EventView() {
             fontFamily: 'var(--font-display)',
             fontSize: '1rem', letterSpacing: '0.05em',
             borderBottom: `2px solid ${tab === t ? 'var(--blue)' : 'transparent'}`,
-            cursor: 'pointer', transition: 'all 0.2s',
-            marginBottom: -1,
+            cursor: 'pointer', transition: 'all 0.2s', marginBottom: -1,
           }}>
             {t === 'picks' ? 'MY PICKS' : 'LEADERBOARD'}
           </button>
@@ -124,6 +122,30 @@ export default function EventView() {
               borderRadius: 'var(--radius)', color: 'var(--red)', fontSize: 13,
             }}>
               🔒 This event is locked — your picks are read-only. Colors show correct answers as they're revealed.
+            </div>
+          )}
+          {!event.is_locked && pickedCount < totalCats && (
+            <div style={{
+              padding: '12px 16px', marginBottom: 16,
+              background: 'var(--blue-glow)', border: '1px solid rgba(74,158,255,0.25)',
+              borderRadius: 'var(--radius)', color: 'var(--blue)', fontSize: 13,
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <span>You have {totalCats - pickedCount} unpicked {totalCats - pickedCount === 1 ? 'category' : 'categories'} remaining.</span>
+              <button
+                className="btn btn-sm"
+                style={{ background: 'var(--blue)', color: '#fff', marginLeft: 12 }}
+                onClick={() => {
+                  event.categories?.forEach(cat => {
+                    if (!myPicks[cat.id] && cat.nominees?.length) {
+                      const pick = cat.nominees[Math.floor(Math.random() * cat.nominees.length)];
+                      handlePick(cat.id, pick.id);
+                    }
+                  });
+                }}
+              >
+                🎲 Random Fill All
+              </button>
             </div>
           )}
           {event.categories?.map(cat => (
@@ -148,10 +170,8 @@ export default function EventView() {
 function StatBadge({ label, value, color }) {
   return (
     <div style={{
-      background: 'var(--surface2)',
-      border: '1px solid var(--border)',
-      borderRadius: 'var(--radius)',
-      padding: '8px 16px',
+      background: 'var(--surface2)', border: '1px solid var(--border)',
+      borderRadius: 'var(--radius)', padding: '8px 16px',
       display: 'flex', flexDirection: 'column',
     }}>
       <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
