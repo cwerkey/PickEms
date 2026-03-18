@@ -23,7 +23,16 @@ function requireAdmin(req, res, next) {
   });
 }
 
-// Strip any keys not in the allowed list from req.body
+// Admin or Master of Ceremony
+function requireAdminOrMoC(req, res, next) {
+  requireAuth(req, res, () => {
+    if (!['admin', 'moc'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+    next();
+  });
+}
+
 function permit(...allowed) {
   return (req, res, next) => {
     if (req.body && typeof req.body === 'object') {
@@ -35,4 +44,4 @@ function permit(...allowed) {
   };
 }
 
-module.exports = { requireAuth, requireAdmin, permit };
+module.exports = { requireAuth, requireAdmin, requireAdminOrMoC, permit };
