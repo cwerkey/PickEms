@@ -30,6 +30,7 @@ export const api = {
   updateMe: (data) => request('PUT', '/auth/me', data),
 
   // Events
+  getUserPicks: (eventId, userId) => request('GET', `/events/${eventId}/user-picks/${userId}`),
   getEvents: () => request('GET', '/events'),
   getEvent: (id) => request('GET', `/events/${id}`),
   getLeaderboard: (id) => request('GET', `/events/${id}/leaderboard`),
