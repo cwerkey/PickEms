@@ -2,21 +2,16 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const DATA_DIR = process.env.NODE_ENV === 'production' 
-  ? '/app/data' 
+const DATA_DIR = process.env.NODE_ENV === 'production'
+  ? '/app/data'
   : path.join(__dirname, '../data');
 
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new Database(path.join(DATA_DIR, 'pickems.db'));
-
-// Enable WAL mode for better concurrent performance
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
-// Initialize schema
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,6 +63,25 @@ db.exec(`
     updated_at TEXT DEFAULT (datetime('now')),
     UNIQUE(user_id, category_id)
   );
+
+  CREATE TABLE IF NOT EXISTS event_participants (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    joined_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(event_id, user_id)
+  );
 `);
+
+// Migration: seed event_participants from existing picks so old data still works
+const participantCount = db.prepare('SELECT COUNT(*) as c FROM event_participants').get().c;
+if (participantCount === 0) {
+  const existingPicks = db.prepare('SELECT DISTINCT user_id, event_id FROM picks').all();
+  const insert = db.prepare('INSERT OR IGNORE INTO event_participants (event_id, user_id) VALUES (?, ?)');
+  const migrate = db.transaction(() => {
+    for (const p of existingPicks) insert.run(p.event_id, p.user_id);
+  });
+  migrate();
+}
 
 module.exports = db;
