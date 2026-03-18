@@ -5,10 +5,15 @@ const { requireAuth } = require('../middleware');
 
 router.get('/', requireAuth, (req, res) => {
   const events = db.prepare('SELECT * FROM events ORDER BY created_at DESC').all();
-  // Attach participant status for current user
   const participantEvents = db.prepare('SELECT event_id FROM event_participants WHERE user_id = ?').all(req.user.id);
   const joined = new Set(participantEvents.map(p => p.event_id));
-  events.forEach(e => { e.is_participant = joined.has(e.id) ? 1 : 0; });
+  const requests = db.prepare('SELECT event_id, status FROM join_requests WHERE user_id = ?').all(req.user.id);
+  const requestMap = {};
+  for (const r of requests) requestMap[r.event_id] = r.status;
+  events.forEach(e => {
+    e.is_participant = joined.has(e.id) ? 1 : 0;
+    e.request_status = requestMap[e.id] || null;
+  });
   res.json(events);
 });
 
@@ -50,10 +55,7 @@ router.get('/:id', requireAuth, (req, res) => {
 router.get('/:id/leaderboard', requireAuth, (req, res) => {
   const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: 'Event not found' });
-
   const totalCategories = db.prepare('SELECT COUNT(*) as count FROM categories WHERE event_id = ?').get(req.params.id).count;
-
-  // Only show participants in leaderboard
   const scores = db.prepare(`
     SELECT u.id, u.display_name,
       COUNT(p.id) as total_picks,
@@ -64,17 +66,14 @@ router.get('/:id/leaderboard', requireAuth, (req, res) => {
     LEFT JOIN picks p ON p.user_id = u.id AND p.event_id = ?
     LEFT JOIN categories c ON c.id = p.category_id
     WHERE ep.event_id = ?
-    GROUP BY u.id
-    ORDER BY correct DESC, total_picks DESC
+    GROUP BY u.id ORDER BY correct DESC, total_picks DESC
   `).all(req.params.id, req.params.id);
-
   const recentAnswer = db.prepare(`
     SELECT c.id, c.name, c.correct_nominee_id, n.name as winner_name
     FROM categories c JOIN nominees n ON n.id = c.correct_nominee_id
     WHERE c.event_id = ? AND c.correct_nominee_id IS NOT NULL
     ORDER BY c.rowid DESC LIMIT 1
   `).get(req.params.id);
-
   let recentActivity = null;
   if (recentAnswer) {
     const picksForCategory = db.prepare(`
@@ -93,7 +92,6 @@ router.get('/:id/leaderboard', requireAuth, (req, res) => {
       })),
     };
   }
-
   res.json({ scores, totalCategories, isLocked: event.is_locked, recentActivity });
 });
 
@@ -132,22 +130,43 @@ router.get('/:id/all-picks', requireAuth, (req, res) => {
   res.json(picks);
 });
 
-// Join event (user self-service)
 router.post('/:id/join', requireAuth, (req, res) => {
   const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: 'Event not found' });
   if (event.is_locked || event.is_archived) return res.status(403).json({ error: 'Cannot join a locked or archived event' });
   db.prepare('INSERT OR IGNORE INTO event_participants (event_id, user_id) VALUES (?, ?)').run(req.params.id, req.user.id);
+  db.prepare("UPDATE join_requests SET status = 'approved', resolved_at = datetime('now') WHERE event_id = ? AND user_id = ? AND status = 'pending'").run(req.params.id, req.user.id);
   res.json({ success: true });
 });
 
-// Leave event (user self-service)
 router.post('/:id/leave', requireAuth, (req, res) => {
   const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: 'Event not found' });
   if (event.is_locked || event.is_archived) return res.status(403).json({ error: 'Cannot leave a locked or archived event' });
   db.prepare('DELETE FROM event_participants WHERE event_id = ? AND user_id = ?').run(req.params.id, req.user.id);
   res.json({ success: true });
+});
+
+router.post('/:id/request-join', requireAuth, (req, res) => {
+  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  if (event.is_locked || event.is_archived) return res.status(403).json({ error: 'Cannot request to join a locked or archived event' });
+  const existing = db.prepare('SELECT id FROM event_participants WHERE event_id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (existing) return res.status(400).json({ error: 'Already a participant' });
+  const existingRequest = db.prepare('SELECT id, status FROM join_requests WHERE event_id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (existingRequest) {
+    if (existingRequest.status === 'pending') return res.status(400).json({ error: 'Request already pending' });
+    if (existingRequest.status === 'approved') return res.status(400).json({ error: 'Already approved' });
+    db.prepare("UPDATE join_requests SET status = 'pending', requested_at = datetime('now'), resolved_at = NULL WHERE id = ?").run(existingRequest.id);
+    return res.json({ success: true, status: 'pending' });
+  }
+  db.prepare('INSERT INTO join_requests (event_id, user_id) VALUES (?, ?)').run(req.params.id, req.user.id);
+  res.json({ success: true, status: 'pending' });
+});
+
+router.get('/:id/my-request', requireAuth, (req, res) => {
+  const request = db.prepare('SELECT status FROM join_requests WHERE event_id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  res.json({ status: request?.status || null });
 });
 
 module.exports = router;
