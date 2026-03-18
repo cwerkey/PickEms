@@ -9,7 +9,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import AdminEvent from './pages/AdminEvent';
 import AdminUsers from './pages/AdminUsers';
 import AllTime from './pages/AllTime';
-import Settings from './pages/Settings';
+import Profile from './pages/Profile';
 
 function ProtectedRoute({ children, adminOnly }) {
   const { user, loading } = useAuth();
@@ -33,7 +33,8 @@ function AppRoutes() {
         <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/event/:id" element={<ProtectedRoute><EventView /></ProtectedRoute>} />
         <Route path="/alltime" element={<ProtectedRoute><AllTime /></ProtectedRoute>} />
-        <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+        <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+        <Route path="/settings" element={<Navigate to="/profile" />} />
         <Route path="/admin" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
         <Route path="/admin/event/:id" element={<ProtectedRoute adminOnly><AdminEvent /></ProtectedRoute>} />
         <Route path="/admin/users" element={<ProtectedRoute adminOnly><AdminUsers /></ProtectedRoute>} />
