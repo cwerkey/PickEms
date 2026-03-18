@@ -150,4 +150,34 @@ router.post('/:id/leave', requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
+// Request to join event
+router.post('/:id/request-join', requireAuth, (req, res) => {
+  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  if (event.is_locked || event.is_archived) return res.status(403).json({ error: 'Cannot request to join a locked or archived event' });
+
+  // Already a participant
+  const existing = db.prepare('SELECT id FROM event_participants WHERE event_id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (existing) return res.status(400).json({ error: 'Already a participant' });
+
+  // Already requested
+  const existingRequest = db.prepare('SELECT id, status FROM join_requests WHERE event_id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (existingRequest) {
+    if (existingRequest.status === 'pending') return res.status(400).json({ error: 'Request already pending' });
+    if (existingRequest.status === 'approved') return res.status(400).json({ error: 'Already approved' });
+    // Re-request if previously denied
+    db.prepare("UPDATE join_requests SET status = 'pending', requested_at = datetime('now'), resolved_at = NULL WHERE id = ?").run(existingRequest.id);
+    return res.json({ success: true, status: 'pending' });
+  }
+
+  db.prepare('INSERT INTO join_requests (event_id, user_id) VALUES (?, ?)').run(req.params.id, req.user.id);
+  res.json({ success: true, status: 'pending' });
+});
+
+// Get current user's request status for an event
+router.get('/:id/my-request', requireAuth, (req, res) => {
+  const request = db.prepare('SELECT status FROM join_requests WHERE event_id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  res.json({ status: request?.status || null });
+});
+
 module.exports = router;
