@@ -82,14 +82,14 @@ export default function EventView() {
         <Countdown lockTime={event.lock_time} isLocked={event.is_locked} />
       </div>
 
-      {/* Stats Bar */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-        <StatBadge label="Picks Made" value={`${pickedCount} / ${totalCats}`} color="var(--blue)" />
+{/* Stats Bar */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+        <StatBadge label="Picks" value={`${pickedCount} / ${totalCats}`} color="var(--blue)" />
         {event.is_locked && (
           <StatBadge label="Correct" value={correctCount} color="var(--green)" />
         )}
         {event.event_date && (
-          <StatBadge label="Event Date" value={new Date(event.event_date).toLocaleDateString()} color="var(--text-dim)" />
+          <StatBadge label="Date" value={new Date(event.event_date).toLocaleDateString()} color="var(--text-dim)" />
         )}
       </div>
 
@@ -171,13 +171,13 @@ function StatBadge({ label, value, color }) {
   return (
     <div style={{
       background: 'var(--surface2)', border: '1px solid var(--border)',
-      borderRadius: 'var(--radius)', padding: '8px 16px',
+      borderRadius: 'var(--radius)', padding: '6px 12px',
       display: 'flex', flexDirection: 'column',
     }}>
-      <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+      <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
         {label}
       </span>
-      <span style={{ fontSize: 20, fontWeight: 700, color, fontFamily: 'var(--font-mono)' }}>
+      <span style={{ fontSize: 16, fontWeight: 700, color, fontFamily: 'var(--font-mono)', lineHeight: 1.2 }}>
         {value}
       </span>
     </div>
