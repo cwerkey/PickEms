@@ -772,5 +772,51 @@ export default function AdminEvent() {
             </div>
 
             <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
-              Edit the JSON below. <strong>Replace All</strong> overwrites existing categories. <strong>Add</strong> appends without removing existing ones.
+              Edit the JSON below. <strong>Replace All</strong> overwrites existing
+              categories. <strong>Add</strong> appends without removing existing ones.
             </p>
+
+            <textarea
+              value={jsonText}
+              onChange={e => { setJsonText(e.target.value); setJsonError(''); }}
+              rows={20}
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 12, resize: 'vertical', marginBottom: 8,
+              }}
+            />
+
+            {/* Inline JSON parse error */}
+            {jsonError && (
+              <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 8 }}>
+                ⚠ {jsonError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                className="btn btn-ghost"
+                onClick={() => setShowJsonEditor(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-ghost"
+                style={{ color: 'var(--rust)', borderColor: 'rgba(232,97,42,0.3)' }}
+                onClick={() => handleJsonEditorSave(true)}
+              >
+                Replace All & Save
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => handleJsonEditorSave(false)}
+              >
+                Add & Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
