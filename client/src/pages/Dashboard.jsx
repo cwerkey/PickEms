@@ -1,15 +1,50 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 
 export default function Dashboard() {
   const [events, setEvents] = useState([]);
+  const [winners, setWinners] = useState({});
   const { user } = useAuth();
 
-  useEffect(() => {
-    api.getEvents().then(setEvents).catch(console.error);
-  }, []);
+  const load = async () => {
+    const evs = await api.getEvents().catch(() => []);
+    setEvents(evs);
+    // Fetch winners for locked/archived events
+    const locked = evs.filter(e => e.is_locked || e.is_archived);
+    const winnerMap = {};
+    await Promise.all(locked.map(async (e) => {
+      try {
+        const lb = await api.getLeaderboard(e.id);
+        const top = lb.scores?.find(s => s.correct > 0);
+        if (top) winnerMap[e.id] = top;
+      } catch {}
+    }));
+    setWinners(winnerMap);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleJoin = async (e, eventId) => {
+    e.preventDefault();
+    try {
+      await api.joinEvent(eventId);
+      toast.success('Joined event!');
+      load();
+    } catch (err) { toast.error(err.message); }
+  };
+
+  const handleLeave = async (e, eventId) => {
+    e.preventDefault();
+    if (!confirm('Leave this event? Your picks will be removed from the leaderboard.')) return;
+    try {
+      await api.leaveEvent(eventId);
+      toast.success('Left event');
+      load();
+    } catch (err) { toast.error(err.message); }
+  };
 
   const active = events.filter(e => !e.is_archived);
   const archived = events.filter(e => e.is_archived);
@@ -23,7 +58,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {active.length === 0 && archived.length === 0 && (
+      {events.length === 0 && (
         <div className="card" style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>
           No events yet.
           {user?.role === 'admin' && (
@@ -36,22 +71,30 @@ export default function Dashboard() {
 
       {active.length > 0 && (
         <>
-          <h2 style={{ fontSize: '1rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
-            Active Events
-          </h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 32 }}>
-            {active.map(event => <EventCard key={event.id} event={event} />)}
+          <SectionLabel>Active Events</SectionLabel>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 32 }}>
+            {active.map(event => (
+              <EventCard
+                key={event.id} event={event}
+                winner={winners[event.id]}
+                onJoin={handleJoin} onLeave={handleLeave}
+              />
+            ))}
           </div>
         </>
       )}
 
       {archived.length > 0 && (
         <>
-          <h2 style={{ fontSize: '1rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
-            Archived Events
-          </h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {archived.map(event => <EventCard key={event.id} event={event} archived />)}
+          <SectionLabel>Archived Events</SectionLabel>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {archived.map(event => (
+              <EventCard
+                key={event.id} event={event} archived
+                winner={winners[event.id]}
+                onJoin={handleJoin} onLeave={handleLeave}
+              />
+            ))}
           </div>
         </>
       )}
@@ -59,37 +102,74 @@ export default function Dashboard() {
   );
 }
 
-function EventCard({ event, archived }) {
+function SectionLabel({ children }) {
   return (
-    <Link to={`/event/${event.id}`} style={{ textDecoration: 'none' }}>
-      <div className="card" style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        cursor: 'pointer', transition: 'all 0.2s',
-        opacity: archived ? 0.65 : 1,
-      }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--border-bright)'; e.currentTarget.style.background = 'var(--surface2)'; }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--surface)'; }}
-      >
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-            <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.3rem', color: 'var(--text)' }}>
-              {event.name}
-            </span>
-            {event.is_locked && <span className="badge badge-muted">🔒 Locked</span>}
-            {!event.is_locked && !archived && <span className="badge badge-green">● Open</span>}
-            {archived && <span className="badge badge-muted">Archived</span>}
-          </div>
-          {event.description && (
-            <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{event.description}</div>
-          )}
+    <h2 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+      {children}
+    </h2>
+  );
+}
+
+function EventCard({ event, archived, winner, onJoin, onLeave }) {
+  const { user } = useAuth();
+  const canJoinLeave = !event.is_locked && !event.is_archived;
+  const isParticipant = !!event.is_participant;
+
+  return (
+    <div className="card" style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      gap: 12, opacity: archived ? 0.75 : 1,
+      transition: 'border-color 0.2s, background 0.2s',
+    }}>
+      <Link to={`/event/${event.id}`} style={{
+        flex: 1, textDecoration: 'none', minWidth: 0,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.2rem', color: 'var(--text)' }}>
+            {event.name}
+          </span>
+          {event.is_locked && <span className="badge badge-muted">🔒 Locked</span>}
+          {!event.is_locked && !archived && <span className="badge badge-green">● Open</span>}
+          {archived && <span className="badge badge-muted">Archived</span>}
+          {isParticipant && !archived && <span className="badge badge-blue">Joined</span>}
+        </div>
+        {event.description && (
+          <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{event.description}</div>
+        )}
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 4 }}>
           {event.event_date && (
-            <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 4 }}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
               📅 {new Date(event.event_date).toLocaleDateString()}
-            </div>
+            </span>
+          )}
+          {winner && event.is_locked && (
+            <span style={{ fontSize: 12, color: 'var(--gold)', fontWeight: 600 }}>
+              🏆 {winner.display_name} ({winner.correct} pts)
+            </span>
           )}
         </div>
-        <span style={{ color: 'var(--text-muted)', fontSize: 20 }}>›</span>
-      </div>
-    </Link>
+      </Link>
+
+      {/* Join/Leave for non-admin users */}
+      {user?.role !== 'admin' && canJoinLeave && (
+        isParticipant ? (
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ color: 'var(--text-muted)', flexShrink: 0 }}
+            onClick={(e) => onLeave(e, event.id)}
+          >
+            Leave
+          </button>
+        ) : (
+          <button
+            className="btn btn-primary btn-sm"
+            style={{ flexShrink: 0 }}
+            onClick={(e) => onJoin(e, event.id)}
+          >
+            Join
+          </button>
+        )
+      )}
+    </div>
   );
 }
