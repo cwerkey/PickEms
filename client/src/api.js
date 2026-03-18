@@ -36,6 +36,8 @@ export const api = {
   getAllTimeStats: () => request('GET', '/events/stats/alltime'),
   joinEvent: (id) => request('POST', `/events/${id}/join`),
   leaveEvent: (id) => request('POST', `/events/${id}/leave`),
+  requestJoin: (id) => request('POST', `/events/${id}/request-join`),
+  getMyRequest: (id) => request('GET', `/events/${id}/my-request`),
 
   // Picks
   savePick: (d) => request('POST', '/picks', d),
@@ -69,4 +71,8 @@ export const api = {
   getParticipantMatrix: () => request('GET', '/admin/participants/matrix'),
   addParticipant: (eventId, userId) => request('POST', `/admin/events/${eventId}/participants`, { user_id: userId }),
   removeParticipant: (eventId, userId) => request('DELETE', `/admin/events/${eventId}/participants/${userId}`),
+
+  // Admin - Join Requests
+  getJoinRequests: () => request('GET', '/admin/join-requests'),
+  resolveJoinRequest: (id, status) => request('PUT', `/admin/join-requests/${id}`, { status }),
 };
