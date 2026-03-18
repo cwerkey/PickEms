@@ -45,7 +45,7 @@ export default function Navbar() {
   //
   // Note: regular users never see /admin links — the server also
   // enforces this, but we hide them here for a clean UI.
-  const navLinks = [
+const navLinks = [
     { to: '/', label: 'Events' },
     { to: '/alltime', label: 'All-Time' },
     // Admin-only links
@@ -53,10 +53,10 @@ export default function Navbar() {
       { to: '/admin', label: 'Admin' },
       { to: '/admin/users', label: 'Users' },
     ] : []),
-    // MoC link — only shown when user is MoC for at least one event
-    // and they are not already an admin (admins have the full Admin link)
+    // MoC link — goes to the dedicated MoC dashboard, not /admin
+    // Only shown when the user is MoC for at least one event
     ...(user?.role !== 'admin' && mocEvents.length > 0 ? [
-      { to: '/admin', label: 'Manage Events' },
+      { to: '/moc', label: 'Manage Events' },
     ] : []),
     { to: '/profile', label: 'Profile' },
   ];
