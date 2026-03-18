@@ -21,28 +21,28 @@ export default function Navbar() {
     }}>
       <div style={{
         maxWidth: 1100, margin: '0 auto',
-        padding: '0 20px',
-        height: 56,
+        padding: '0 20px', height: 56,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
           <Link to="/" style={{
             fontFamily: 'var(--font-display)',
-            fontSize: '1.6rem',
-            letterSpacing: '0.08em',
-            color: 'var(--text)',
-            textDecoration: 'none',
-            display: 'flex', alignItems: 'center', gap: 8,
+            fontSize: '1.6rem', letterSpacing: '0.08em',
+            color: 'var(--text)', textDecoration: 'none',
+            display: 'flex', alignItems: 'center', gap: 4,
           }}>
             <span style={{ color: 'var(--rust)' }}>PICK</span>
-            <span style={{ color: 'var(--blue)' }}>EMS</span>
+            <span style={{ color: 'var(--blue)' }}> IT</span>
           </Link>
-          {user?.role === 'admin' && (
-            <div style={{ display: 'flex', gap: 4 }}>
-              <NavLink to="/admin" active={location.pathname === '/admin'}>Admin</NavLink>
-              <NavLink to="/admin/users" active={location.pathname === '/admin/users'}>Users</NavLink>
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: 4 }}>
+            <NavLink to="/alltime" active={location.pathname === '/alltime'}>All-Time</NavLink>
+            {user?.role === 'admin' && (
+              <>
+                <NavLink to="/admin" active={location.pathname === '/admin'}>Admin</NavLink>
+                <NavLink to="/admin/users" active={location.pathname === '/admin/users'}>Users</NavLink>
+              </>
+            )}
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ color: 'var(--text-muted)', fontSize: 13, fontFamily: 'var(--font-mono)' }}>
@@ -51,6 +51,7 @@ export default function Navbar() {
           {user?.role === 'admin' && (
             <span className="badge badge-rust" style={{ fontSize: 11 }}>ADMIN</span>
           )}
+          <NavLink to="/settings" active={location.pathname === '/settings'}>Settings</NavLink>
           <button className="btn btn-ghost btn-sm" onClick={handleLogout}>Logout</button>
         </div>
       </div>
@@ -61,14 +62,11 @@ export default function Navbar() {
 function NavLink({ to, active, children }) {
   return (
     <Link to={to} style={{
-      padding: '6px 12px',
-      borderRadius: 'var(--radius)',
-      fontSize: 14,
-      fontWeight: 500,
+      padding: '6px 12px', borderRadius: 'var(--radius)',
+      fontSize: 14, fontWeight: 500,
       color: active ? 'var(--blue)' : 'var(--text-dim)',
       background: active ? 'var(--blue-glow)' : 'transparent',
-      textDecoration: 'none',
-      transition: 'all 0.2s',
+      textDecoration: 'none', transition: 'all 0.2s',
     }}>
       {children}
     </Link>
