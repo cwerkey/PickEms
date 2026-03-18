@@ -772,5 +772,5 @@ export default function AdminEvent() {
             </div>
 
             <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
-              Edit the JSON below. <strong>Replace All</strong> overwrites existing
-              categories. <strong>Add</strong>
+              Edit the JSON below. <strong>Replace All</strong> overwrites existing categories. <strong>Add</strong> appends without removing existing ones.
+            </p>
