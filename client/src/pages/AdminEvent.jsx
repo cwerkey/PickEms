@@ -10,48 +10,51 @@ export default function AdminEvent() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  // ── MoC restriction flag ─────────────────────────────────────
-  // Master of Ceremony can: enter correct answers, lock events
-  // Cannot: edit categories/nominees, manage participants, import,
-  //         unlock events, or access the JSON editor
-  const isMoC = user?.role === 'moc';
-
   // ── State ────────────────────────────────────────────────────
   const [event, setEvent] = useState(null);
   const [participants, setParticipants] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  // Tab state — MoC always starts on (and is locked to) 'answers'
   const [tab, setTab] = useState('answers');
 
-  // Import modal visibility
+  // Import modal
   const [showImport, setShowImport] = useState(false);
 
-  // JSON editor modal state
+  // JSON editor modal
   const [showJsonEditor, setShowJsonEditor] = useState(false);
   const [jsonText, setJsonText] = useState('');
   const [jsonError, setJsonError] = useState('');
 
-  // Category inline editing
-  // editingCategory: { id, name } | null
+  // Category inline editing — { id, name } | null
   const [editingCategory, setEditingCategory] = useState(null);
   const [newCatName, setNewCatName] = useState('');
 
-  // Nominee inline editing
-  // editingNominee: { id, name, subtitle } | null
+  // Nominee inline editing — { id, name, subtitle } | null
   const [editingNominee, setEditingNominee] = useState(null);
 
-  // Which category has the "add nominee" form open (by category id)
+  // Which category has the add-nominee form open (by category id)
   const [addingNomineeFor, setAddingNomineeFor] = useState(null);
   const [newNominee, setNewNominee] = useState({ name: '', subtitle: '' });
 
+  // ── Per-event MoC check ──────────────────────────────────────
+  // MoC is stored in event_participants.participant_role, NOT on the user account.
+  // After the event loads, we check if this user's participant_role is 'moc'.
+  // Admin always overrides — admins are never restricted to MoC mode.
+  // Troubleshooting: if isMoC is unexpectedly true, check event_participants table
+  // for this user/event combo — participant_role should be 'participant' not 'moc'.
+  const isMoC = !!(
+    event &&
+    event.participant_role === 'moc' &&
+    user?.role !== 'admin'
+  );
+
   // ── Data loading ─────────────────────────────────────────────
+  // MoC users don't need the full user list or participant management,
+  // so we skip those fetches to avoid unnecessary DB queries.
   const load = useCallback(async () => {
     try {
-      // MoC doesn't need participants/users — skip those fetches
       const fetches = [api.getEvent(id)];
-      if (!isMoC) {
+      if (user?.role === 'admin') {
         fetches.push(api.getParticipants(id));
         fetches.push(api.getUsers());
       }
@@ -60,21 +63,22 @@ export default function AdminEvent() {
       if (parts) setParticipants(parts);
       if (users) setAllUsers(users);
     } catch (e) {
-      // If event not found or permission error, go back to admin
+      // Likely a 403 (no access) or 404 (event not found)
       toast.error(e.message);
       navigate('/admin');
     } finally {
       setLoading(false);
     }
-  }, [id, isMoC]);
+  }, [id, user?.role]);
 
   useEffect(() => { load(); }, [load]);
 
   // ── Lock / Unlock ────────────────────────────────────────────
-  // MoC can lock but NOT unlock — enforced both here and on server
+  // Admin: full toggle
+  // MoC: can only lock — the unlock button is hidden in the UI,
+  //      and the server also enforces this restriction independently
   const handleToggleLock = async () => {
     if (isMoC && event.is_locked) {
-      // Should not be reachable via UI but guard anyway
       toast.error('MoC cannot unlock events');
       return;
     }
@@ -88,7 +92,8 @@ export default function AdminEvent() {
   };
 
   // ── Correct Answers ──────────────────────────────────────────
-  // Clicking a nominee sets it as the winner; clicking again clears it
+  // Available to both admin and MoC.
+  // Clicking an already-selected nominee passes null to clear the answer.
   const handleSetAnswer = async (categoryId, nomineeId) => {
     try {
       await api.setAnswer(categoryId, nomineeId || null);
@@ -124,8 +129,8 @@ export default function AdminEvent() {
   };
 
   const handleDeleteCategory = async (catId) => {
-    // Warn: deleting a category also removes all its nominees and user picks
-    if (!confirm('Delete this category and all its nominees? This will also remove any picks made for this category.')) return;
+    // Warn: cascades to nominees and any picks made for this category
+    if (!confirm('Delete this category and all its nominees? This will also remove any picks for this category.')) return;
     try {
       await api.deleteCategory(catId);
       load();
@@ -173,8 +178,9 @@ export default function AdminEvent() {
   };
 
   // ── JSON Export / Editor (admin only) ───────────────────────
-  // Exports current categories+nominees as JSON into an editable textarea
-  // User can edit and save back — useful for bulk corrections
+  // Clicking "JSON Editor" exports current categories+nominees into
+  // an editable textarea. User can bulk-edit and save back.
+  // "Replace All" wipes existing categories first; "Add" appends.
 
   const handleExportJson = () => {
     if (!event?.categories) return;
@@ -193,7 +199,7 @@ export default function AdminEvent() {
   const handleJsonEditorSave = async (replace) => {
     try {
       const parsed = JSON.parse(jsonText);
-      if (!Array.isArray(parsed)) throw new Error('Must be a JSON array');
+      if (!Array.isArray(parsed)) throw new Error('Must be a JSON array of categories');
       if (replace) {
         await api.reimportCategories(id, parsed);
         toast.success('Categories replaced successfully');
@@ -204,7 +210,7 @@ export default function AdminEvent() {
       setShowJsonEditor(false);
       load();
     } catch (e) {
-      // Show parse/validation errors inline in the modal
+      // Shown inline in the modal so user can fix their JSON
       setJsonError(e.message);
     }
   };
@@ -229,9 +235,25 @@ export default function AdminEvent() {
     }
   };
 
-  // ── Loading / not found states ───────────────────────────────
+  // Toggle a participant's event role between 'participant' and 'moc'
+  // MoC users can: enter correct answers, lock events
+  // MoC users cannot: edit categories, manage participants, unlock events
+  const handleToggleMoC = async (participant) => {
+    const newRole = participant.participant_role === 'moc' ? 'participant' : 'moc';
+    try {
+      await api.setParticipantRole(id, participant.id, newRole);
+      load();
+    } catch (e) {
+      toast.error(e.message);
+    }
+  };
+
+  // ── Loading / not found ──────────────────────────────────────
   if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '50vh' }}>
+    <div style={{
+      display: 'flex', alignItems: 'center',
+      justifyContent: 'center', height: '50vh',
+    }}>
       <div style={{ color: 'var(--text-muted)' }}>Loading event...</div>
     </div>
   );
@@ -243,7 +265,7 @@ export default function AdminEvent() {
   const participantIds = new Set(participants.map(p => p.id));
   const nonParticipants = allUsers.filter(u => !participantIds.has(u.id));
 
-  // Tabs — MoC only sees 'answers'; admin sees all three
+  // Tab list — MoC only sees the answers tab
   const tabs = [
     { key: 'answers', label: 'CORRECT ANSWERS' },
     ...(!isMoC ? [
@@ -259,7 +281,6 @@ export default function AdminEvent() {
       {/* ── Page Header ── */}
       <div className="page-header">
         <div>
-          {/* Back button navigates to admin dashboard */}
           <button
             onClick={() => navigate('/admin')}
             style={{
@@ -273,10 +294,8 @@ export default function AdminEvent() {
           <h1 className="page-title">{event.name}</h1>
         </div>
 
-        {/* ── Action buttons ── */}
+        {/* Action buttons — Import and JSON editor only for admin */}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-
-          {/* Import and JSON editor — admin only */}
           {!isMoC && (
             <>
               <button
@@ -294,23 +313,27 @@ export default function AdminEvent() {
             </>
           )}
 
-          {/* Lock button:
-              - Admin: toggles lock/unlock
-              - MoC: can only lock (button hidden when already locked) */}
+          {/* Lock button behaviour:
+              Admin  → toggles lock and unlock freely
+              MoC    → can only lock; button hidden once event is locked */}
           {!isMoC ? (
             <button
               className="btn btn-sm"
               style={{
-                background: event.is_locked ? 'rgba(34,201,122,0.1)' : 'rgba(232,97,42,0.1)',
+                background: event.is_locked
+                  ? 'rgba(34,201,122,0.1)'
+                  : 'rgba(232,97,42,0.1)',
                 color: event.is_locked ? 'var(--green)' : 'var(--rust)',
-                border: `1px solid ${event.is_locked ? 'rgba(34,201,122,0.3)' : 'rgba(232,97,42,0.3)'}`,
+                border: `1px solid ${event.is_locked
+                  ? 'rgba(34,201,122,0.3)'
+                  : 'rgba(232,97,42,0.3)'}`,
               }}
               onClick={handleToggleLock}
             >
               {event.is_locked ? '🔓 Unlock Picks' : '🔒 Lock Picks'}
             </button>
           ) : (
-            // MoC view: show lock button only if not yet locked
+            // MoC: show lock button only while unlocked; show badge once locked
             event.is_locked ? (
               <span className="badge badge-muted">🔒 Locked</span>
             ) : (
@@ -338,7 +361,7 @@ export default function AdminEvent() {
         <span className="badge badge-green">
           {answeredCount} answered
         </span>
-        {/* Participant count — admin only */}
+        {/* Participant count shown to admin only */}
         {!isMoC && (
           <span className="badge badge-muted">
             {participants.length} participants
@@ -347,9 +370,13 @@ export default function AdminEvent() {
         {event.is_locked && (
           <span className="badge badge-muted">🔒 Locked</span>
         )}
+        {/* Remind MoC of their limited role on this event */}
+        {isMoC && (
+          <span className="badge badge-blue">🎙 You are MoC for this event</span>
+        )}
       </div>
 
-      {/* ── Tab navigation ── */}
+      {/* ── Tab Navigation ── */}
       <div style={{
         display: 'flex', gap: 4,
         borderBottom: '1px solid var(--border)',
@@ -377,8 +404,10 @@ export default function AdminEvent() {
 
       {/* ════════════════════════════════════════════════════════
           TAB: CORRECT ANSWERS
-          Available to both admin and MoC
-          Click a nominee to mark as winner; click again to clear
+          Accessible by both admin and MoC.
+          Click a nominee to set as winner; click the selected one again to clear.
+          Troubleshooting: if answers aren't saving, check that the user
+          is either admin or has participant_role = 'moc' in event_participants.
       ════════════════════════════════════════════════════════ */}
       {tab === 'answers' && (
         <div className="card">
@@ -389,19 +418,22 @@ export default function AdminEvent() {
           {!event.categories?.length && (
             <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
               {isMoC
-                ? 'No categories set up for this event yet.'
+                ? 'No categories have been set up for this event yet.'
                 : 'No categories yet — use Import or the Edit Categories tab.'}
             </div>
           )}
 
           {event.categories?.map(cat => (
             <div key={cat.id} style={{ marginBottom: 16 }}>
-              {/* Category name + answered indicator */}
+              {/* Category label with answered indicator */}
               <div style={{
                 display: 'flex', alignItems: 'center',
                 gap: 8, marginBottom: 8,
               }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-dim)' }}>
+                <span style={{
+                  fontSize: 13, fontWeight: 600,
+                  color: 'var(--text-dim)',
+                }}>
                   {cat.name}
                 </span>
                 {cat.correct_nominee_id && (
@@ -411,7 +443,7 @@ export default function AdminEvent() {
                 )}
               </div>
 
-              {/* Nominee buttons — selected one glows green */}
+              {/* Nominee buttons */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {cat.nominees.map(nom => {
                   const isSelected = cat.correct_nominee_id === nom.id;
@@ -421,8 +453,12 @@ export default function AdminEvent() {
                       onClick={() => handleSetAnswer(cat.id, isSelected ? null : nom.id)}
                       className="btn btn-sm"
                       style={{
-                        background: isSelected ? 'rgba(34,201,122,0.15)' : 'var(--surface2)',
-                        border: `1px solid ${isSelected ? 'rgba(34,201,122,0.5)' : 'var(--border)'}`,
+                        background: isSelected
+                          ? 'rgba(34,201,122,0.15)'
+                          : 'var(--surface2)',
+                        border: `1px solid ${isSelected
+                          ? 'rgba(34,201,122,0.5)'
+                          : 'var(--border)'}`,
                         color: isSelected ? 'var(--green)' : 'var(--text-dim)',
                       }}
                     >
@@ -444,13 +480,15 @@ export default function AdminEvent() {
 
       {/* ════════════════════════════════════════════════════════
           TAB: EDIT CATEGORIES
-          Admin only — hidden from MoC
-          Inline editing for category names and nominees
+          Admin only — hidden from MoC.
+          Supports inline rename of categories and nominees,
+          adding new nominees, and deleting either.
+          Enter key saves, Escape cancels in edit fields.
       ════════════════════════════════════════════════════════ */}
       {tab === 'edit' && !isMoC && (
         <div className="card">
 
-          {/* Add new category form */}
+          {/* Add new category */}
           <form
             onSubmit={handleAddCategory}
             style={{ display: 'flex', gap: 8, marginBottom: 20 }}
@@ -467,12 +505,13 @@ export default function AdminEvent() {
           </form>
 
           {!event.categories?.length && (
-            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
+            <div style={{
+              textAlign: 'center', color: 'var(--text-muted)', padding: 32,
+            }}>
               No categories yet. Add one above or use Import.
             </div>
           )}
 
-          {/* Category list */}
           {event.categories?.map(cat => (
             <div
               key={cat.id}
@@ -485,16 +524,18 @@ export default function AdminEvent() {
               }}
             >
               {/* ── Category header row ── */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <div style={{
+                display: 'flex', alignItems: 'center',
+                gap: 8, marginBottom: 10,
+              }}>
                 {editingCategory?.id === cat.id ? (
-                  // Inline edit mode for category name
+                  // Edit mode
                   <>
                     <input
                       value={editingCategory.name}
                       onChange={e => setEditingCategory(c => ({ ...c, name: e.target.value }))}
                       style={{ flex: 1, fontSize: 14, padding: '5px 10px' }}
                       autoFocus
-                      // Save on Enter, cancel on Escape
                       onKeyDown={e => {
                         if (e.key === 'Enter') handleUpdateCategory(cat.id);
                         if (e.key === 'Escape') setEditingCategory(null);
@@ -514,9 +555,12 @@ export default function AdminEvent() {
                     </button>
                   </>
                 ) : (
-                  // Display mode for category name
+                  // Display mode
                   <>
-                    <span style={{ flex: 1, fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>
+                    <span style={{
+                      flex: 1, fontWeight: 600,
+                      fontSize: 14, color: 'var(--text)',
+                    }}>
                       {cat.name}
                     </span>
                     <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
@@ -539,11 +583,17 @@ export default function AdminEvent() {
               </div>
 
               {/* ── Nominees list ── */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, paddingLeft: 8 }}>
+              <div style={{
+                display: 'flex', flexDirection: 'column',
+                gap: 5, paddingLeft: 8,
+              }}>
                 {cat.nominees.map(nom => (
-                  <div key={nom.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div
+                    key={nom.id}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                  >
                     {editingNominee?.id === nom.id ? (
-                      // Inline edit mode for nominee
+                      // Edit mode for nominee
                       <>
                         <input
                           value={editingNominee.name}
@@ -578,7 +628,10 @@ export default function AdminEvent() {
                     ) : (
                       // Display mode for nominee
                       <>
-                        <span style={{ flex: 1, fontSize: 13, color: 'var(--text-dim)' }}>
+                        <span style={{
+                          flex: 1, fontSize: 13,
+                          color: 'var(--text-dim)',
+                        }}>
                           {nom.name}
                           {nom.subtitle && (
                             <span style={{ color: 'var(--text-muted)' }}>
@@ -609,7 +662,7 @@ export default function AdminEvent() {
                   </div>
                 ))}
 
-                {/* ── Add nominee inline form ── */}
+                {/* ── Add nominee form ── */}
                 {addingNomineeFor === cat.id ? (
                   <form
                     onSubmit={handleAddNominee}
@@ -660,17 +713,22 @@ export default function AdminEvent() {
 
       {/* ════════════════════════════════════════════════════════
           TAB: PARTICIPANTS
-          Admin only — hidden from MoC
-          Manage who is included in this specific event
+          Admin only — hidden from MoC.
+          Current participants are shown as chips with:
+            - A role toggle button (+ MoC / 🎙 MoC) to grant/revoke MoC
+            - A ✕ button to remove them from the event entirely
+          Non-participants are listed below as "+ Add" buttons.
+          Troubleshooting: if MoC badge isn't appearing in the navbar,
+          check event_participants.participant_role for the user/event row.
       ════════════════════════════════════════════════════════ */}
       {tab === 'participants' && !isMoC && (
         <div className="card">
           <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>
-            Manage who participates in this event. Users can also join/leave
-            from the events page while the event is open.
+            Manage who participates in this event. Toggle 🎙 MoC to grant a
+            participant the ability to enter correct answers and lock this event.
           </p>
 
-          {/* Current participants — shown as removable chips */}
+          {/* Current participants */}
           <label className="label">Current Participants</label>
           <div style={{
             display: 'flex', flexWrap: 'wrap',
@@ -681,33 +739,65 @@ export default function AdminEvent() {
                 No participants yet
               </span>
             )}
-            {participants.map(p => (
-              <div
-                key={p.id}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  background: 'rgba(34,201,122,0.08)',
-                  border: '1px solid rgba(34,201,122,0.3)',
-                  borderRadius: 20, padding: '5px 12px', fontSize: 13,
-                }}
-              >
-                <span style={{ color: 'var(--text)' }}>{p.display_name}</span>
-                <button
-                  onClick={() => handleRemoveParticipant(p.id)}
+
+            {participants.map(p => {
+              const isMoCParticipant = p.participant_role === 'moc';
+              return (
+                <div
+                  key={p.id}
                   style={{
-                    background: 'none', border: 'none',
-                    color: 'var(--text-muted)', cursor: 'pointer',
-                    fontSize: 14, lineHeight: 1, padding: '0 2px',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    // Blue tint for MoC, green tint for regular participant
+                    background: isMoCParticipant
+                      ? 'rgba(74,158,255,0.08)'
+                      : 'rgba(34,201,122,0.08)',
+                    border: `1px solid ${isMoCParticipant
+                      ? 'rgba(74,158,255,0.3)'
+                      : 'rgba(34,201,122,0.3)'}`,
+                    borderRadius: 20, padding: '5px 12px',
+                    fontSize: 13, flexWrap: 'wrap',
                   }}
-                  title={`Remove ${p.display_name}`}
                 >
-                  ✕
-                </button>
-              </div>
-            ))}
+                  <span style={{ color: 'var(--text)' }}>{p.display_name}</span>
+
+                  {/* MoC toggle — flips participant_role between 'participant' and 'moc' */}
+                  <button
+                    onClick={() => handleToggleMoC(p)}
+                    style={{
+                      background: 'none',
+                      border: `1px solid ${isMoCParticipant
+                        ? 'rgba(74,158,255,0.4)'
+                        : 'var(--border)'}`,
+                      color: isMoCParticipant ? 'var(--blue)' : 'var(--text-muted)',
+                      cursor: 'pointer', fontSize: 11, fontWeight: 600,
+                      padding: '2px 7px', borderRadius: 4,
+                      transition: 'all 0.15s',
+                    }}
+                    title={isMoCParticipant
+                      ? `Remove MoC role from ${p.display_name}`
+                      : `Make ${p.display_name} MoC for this event`}
+                  >
+                    {isMoCParticipant ? '🎙 MoC' : '+ MoC'}
+                  </button>
+
+                  {/* Remove participant entirely */}
+                  <button
+                    onClick={() => handleRemoveParticipant(p.id)}
+                    style={{
+                      background: 'none', border: 'none',
+                      color: 'var(--text-muted)', cursor: 'pointer',
+                      fontSize: 14, lineHeight: 1, padding: '0 2px',
+                    }}
+                    title={`Remove ${p.display_name} from event`}
+                  >
+                    ✕
+                  </button>
+                </div>
+              );
+            })}
           </div>
 
-          {/* Add participants — users not yet in this event */}
+          {/* Add non-participants */}
           {nonParticipants.length > 0 && (
             <>
               <label className="label">Add Participants</label>
@@ -733,7 +823,7 @@ export default function AdminEvent() {
         </div>
       )}
 
-      {/* ── Import Modal ── */}
+      {/* ── Import Modal (admin only) ── */}
       {showImport && !isMoC && (
         <ImportModal
           eventId={id}
@@ -742,21 +832,23 @@ export default function AdminEvent() {
         />
       )}
 
-      {/* ── JSON Editor Modal ── */}
+      {/* ── JSON Editor Modal (admin only) ── */}
       {showJsonEditor && !isMoC && (
         <div
           style={{
             position: 'fixed', inset: 0, zIndex: 200,
             background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: 20,
+            display: 'flex', alignItems: 'center',
+            justifyContent: 'center', padding: 20,
           }}
-          // Click backdrop to close
           onClick={e => e.target === e.currentTarget && setShowJsonEditor(false)}
         >
           <div
             className="card fade-in"
-            style={{ width: '100%', maxWidth: 720, maxHeight: '90vh', overflowY: 'auto' }}
+            style={{
+              width: '100%', maxWidth: 720,
+              maxHeight: '90vh', overflowY: 'auto',
+            }}
           >
             <div style={{
               display: 'flex', justifyContent: 'space-between',
@@ -786,7 +878,7 @@ export default function AdminEvent() {
               }}
             />
 
-            {/* Inline JSON parse error */}
+            {/* Inline JSON parse / validation error */}
             {jsonError && (
               <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 8 }}>
                 ⚠ {jsonError}
@@ -817,6 +909,7 @@ export default function AdminEvent() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

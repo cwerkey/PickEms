@@ -76,3 +76,10 @@ export const api = {
   getJoinRequests: () => request('GET', '/admin/join-requests'),
   resolveJoinRequest: (id, status) => request('PUT', `/admin/join-requests/${id}`, { status }),
 };
+
+// Set a participant's role within an event (participant or moc)
+  setParticipantRole: (eventId, userId, participant_role) =>
+    request('PUT', `/admin/events/${eventId}/participants/${userId}/role`, { participant_role }),
+
+  // Get events where current user is MoC
+  getMyMocEvents: () => request('GET', '/events/my-moc-events'),

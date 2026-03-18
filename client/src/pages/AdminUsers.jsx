@@ -8,10 +8,13 @@ export default function AdminUsers() {
 
   // ── State ────────────────────────────────────────────────────
   const [users, setUsers] = useState([]);
-  const [matrix, setMatrix] = useState(null); // participation matrix data
+
+  // Participation matrix: { users[], events[], matrix: { [userId]: { [eventId]: 'participant'|'moc' } } }
+  const [matrix, setMatrix] = useState(null);
+
   const [tab, setTab] = useState('users');
 
-  // Create user form
+  // Create user form visibility and fields
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({
     username: '',
@@ -20,19 +23,20 @@ export default function AdminUsers() {
     role: 'user',
   });
 
-  // Reset password modal — stores the target user's id
+  // Reset password modal — holds the id of the user being reset
   const [resetTarget, setResetTarget] = useState(null);
   const [newPassword, setNewPassword] = useState('');
 
-  // Edit user modal — stores the target user's id
+  // Edit user modal — holds the id of the user being edited
   const [editTarget, setEditTarget] = useState(null);
   const [editForm, setEditForm] = useState({ username: '', display_name: '' });
 
   // ── Data loading ─────────────────────────────────────────────
-  // Loads both the user list and the participation matrix together
+  // Load both user list and participation matrix in parallel.
+  // Troubleshooting: if matrix is blank, check that /admin/participants/matrix
+  // is returning data — may be an auth issue if token is expired.
   const load = () => {
     api.getUsers().then(setUsers).catch(console.error);
-    // Matrix: { users[], events[], matrix: { [userId]: { [eventId]: true } } }
     api.getParticipantMatrix().then(setMatrix).catch(console.error);
   };
 
@@ -48,7 +52,7 @@ export default function AdminUsers() {
       setForm({ username: '', password: '', display_name: '', role: 'user' });
       load();
     } catch (err) {
-      // Common errors: username taken, password too short
+      // Common: username already taken, or password too short
       toast.error(err.message);
     }
   };
@@ -66,7 +70,7 @@ export default function AdminUsers() {
     }
   };
 
-  // ── Edit user (username / display name) ──────────────────────
+  // ── Edit username / display name ─────────────────────────────
   const handleEditSave = async (e) => {
     e.preventDefault();
     try {
@@ -75,14 +79,14 @@ export default function AdminUsers() {
       setEditTarget(null);
       load();
     } catch (err) {
-      // Common error: username already taken by another user
+      // Common: new username already taken by someone else
       toast.error(err.message);
     }
   };
 
   // ── Delete user ──────────────────────────────────────────────
   const handleDelete = async (user) => {
-    if (!confirm(`Delete user "${user.display_name}"? This removes all their picks.`)) return;
+    if (!confirm(`Delete "${user.display_name}"? This removes all their picks too.`)) return;
     try {
       await api.deleteUser(user.id);
       toast.success('User deleted');
@@ -93,11 +97,15 @@ export default function AdminUsers() {
   };
 
   // ── Participation matrix toggle ──────────────────────────────
-  // isIn = currently participating, click removes them
-  // !isIn = not participating, click adds them
-  const toggleParticipant = async (eventId, userId, isIn) => {
+  // currentRole is the value from matrix[userId][eventId]:
+  //   undefined / falsy = not a participant → clicking adds them
+  //   'participant' or 'moc' = currently in → clicking removes them
+  // Note: toggling role between participant and MoC is done from
+  // the AdminEvent participants tab, not here. This matrix only
+  // handles add/remove participation.
+  const toggleParticipant = async (eventId, userId, currentRole) => {
     try {
-      if (isIn) {
+      if (currentRole) {
         await api.removeParticipant(eventId, userId);
       } else {
         await api.addParticipant(eventId, userId);
@@ -108,10 +116,13 @@ export default function AdminUsers() {
     }
   };
 
-  // ── Role display helper ──────────────────────────────────────
+  // ── Role badge ───────────────────────────────────────────────
+  // Account-level roles: admin or user only.
+  // MoC is per-event now — shown in the matrix as 🎙 instead here.
   const RoleBadge = ({ role }) => {
-    if (role === 'admin') return <span className="badge badge-rust">ADMIN</span>;
-    if (role === 'moc') return <span className="badge badge-blue">MoC</span>;
+    if (role === 'admin') {
+      return <span className="badge badge-rust">ADMIN</span>;
+    }
     return null;
   };
 
@@ -147,7 +158,7 @@ export default function AdminUsers() {
                 />
               </div>
 
-              {/* Username: alphanumeric + underscores only (validated server-side too) */}
+              {/* Username: alphanumeric + underscores only — validated server-side too */}
               <div className="form-group">
                 <label className="label">Username *</label>
                 <input
@@ -170,10 +181,9 @@ export default function AdminUsers() {
                 />
               </div>
 
-              {/* Role options:
-                  user  = standard participant
-                  moc   = Master of Ceremony (lock events + enter winners only)
-                  admin = full access */}
+              {/* Account roles: user or admin only.
+                  MoC is now a per-event role — assign it from the
+                  Participants tab inside each event's admin page. */}
               <div className="form-group">
                 <label className="label">Role</label>
                 <select
@@ -181,7 +191,6 @@ export default function AdminUsers() {
                   onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
                 >
                   <option value="user">User</option>
-                  <option value="moc">Master of Ceremony (MoC)</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>
@@ -301,15 +310,18 @@ export default function AdminUsers() {
 
       {/* ════════════════════════════════════════════════════════
           TAB: USERS
-          List of all users with edit / reset password / delete actions
+          Full list of all accounts with edit / reset / delete actions.
       ════════════════════════════════════════════════════════ */}
       {tab === 'users' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {users.length === 0 && (
-            <div className="card" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
+            <div className="card" style={{
+              textAlign: 'center', color: 'var(--text-muted)', padding: 32,
+            }}>
               No users yet.
             </div>
           )}
+
           {users.map(user => (
             <div
               key={user.id}
@@ -318,12 +330,17 @@ export default function AdminUsers() {
             >
               {/* User info */}
               <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center',
+                  gap: 8, flexWrap: 'wrap',
+                }}>
                   <span style={{ fontWeight: 600 }}>{user.display_name}</span>
                   <RoleBadge role={user.role} />
-                  {/* Highlight the currently logged-in user */}
+                  {/* Highlight the currently logged-in admin */}
                   {user.id === currentUser?.id && (
-                    <span className="badge badge-green" style={{ fontSize: 11 }}>YOU</span>
+                    <span className="badge badge-green" style={{ fontSize: 11 }}>
+                      YOU
+                    </span>
                   )}
                 </div>
                 <div style={{
@@ -334,7 +351,7 @@ export default function AdminUsers() {
                 </div>
               </div>
 
-              {/* User actions */}
+              {/* Actions */}
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button
                   className="btn btn-ghost btn-sm"
@@ -354,7 +371,7 @@ export default function AdminUsers() {
                 >
                   Reset Password
                 </button>
-                {/* Can't delete yourself */}
+                {/* Cannot delete yourself */}
                 {user.id !== currentUser?.id && (
                   <button
                     className="btn btn-danger btn-sm"
@@ -371,24 +388,34 @@ export default function AdminUsers() {
 
       {/* ════════════════════════════════════════════════════════
           TAB: PARTICIPATION MATRIX
-          Grid of users × events with toggleable checkmarks
-          Green circle = participating, grey + = not participating
-          Troubleshooting: if matrix is empty, no events exist yet
+          Grid showing every user × every event.
+          Each cell is a toggle button:
+            ✓  green  = regular participant
+            🎙 blue   = MoC for that event
+            +  grey   = not participating (click to add)
+          Clicking an active cell removes the user from the event.
+          Clicking an inactive cell adds them as a regular participant.
+          To change a participant to MoC, go to the event's Participants tab.
+          Troubleshooting: if a cell shows the wrong state, refresh — the
+          matrix is fetched fresh on every load() call.
       ════════════════════════════════════════════════════════ */}
       {tab === 'participation' && matrix && (
         <div className="card">
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>
-            Toggle participation per user per event. Green = participating.
-            Locked/archived events can still be toggled here by admins.
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 4 }}>
+            Toggle participation per user per event.
+          </p>
+          <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 16 }}>
+            ✓ = participant · 🎙 = MoC · + = not participating.
+            To assign MoC, first add the user then use the event's Participants tab.
           </p>
 
-          {/* Horizontal scroll wrapper for wide tables */}
+          {/* Horizontal scroll for wide tables on small screens */}
           <div style={{ overflowX: 'auto' }}>
             <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
 
-                  {/* User column header */}
+                  {/* User column */}
                   <th style={{ ...thStyle, textAlign: 'left', minWidth: 140 }}>
                     User
                   </th>
@@ -399,7 +426,7 @@ export default function AdminUsers() {
                       key={e.id}
                       style={{ ...thStyle, textAlign: 'center', minWidth: 90 }}
                     >
-                      {/* Truncate long event names with a tooltip */}
+                      {/* Truncate long names — full name in tooltip */}
                       <div
                         style={{
                           maxWidth: 88, overflow: 'hidden',
@@ -409,13 +436,19 @@ export default function AdminUsers() {
                       >
                         {e.name}
                       </div>
-                      {/* Status indicators below event name */}
-                      <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 3 }}>
+                      <div style={{
+                        display: 'flex', justifyContent: 'center',
+                        gap: 4, marginTop: 3,
+                      }}>
                         {e.is_locked && (
-                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>🔒</span>
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                            🔒
+                          </span>
                         )}
                         {e.is_archived && (
-                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>archived</span>
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                            archived
+                          </span>
                         )}
                       </div>
                     </th>
@@ -429,7 +462,7 @@ export default function AdminUsers() {
                     key={user.id}
                     style={{ borderBottom: '1px solid var(--border)' }}
                   >
-                    {/* User name + username */}
+                    {/* User name */}
                     <td style={{ padding: '10px 12px' }}>
                       <div style={{ fontWeight: 500, color: 'var(--text)' }}>
                         {user.display_name}
@@ -442,34 +475,54 @@ export default function AdminUsers() {
                       </div>
                     </td>
 
-                    {/* Toggle button for each event */}
+                    {/* Toggle cell for each event */}
                     {matrix.events.map(ev => {
-                      const isIn = !!(matrix.matrix[user.id]?.[ev.id]);
+                      // currentRole: 'participant' | 'moc' | undefined
+                      const currentRole = matrix.matrix[user.id]?.[ev.id];
+                      const isMoCCell = currentRole === 'moc';
+                      const isParticipant = !!currentRole;
+
                       return (
                         <td
                           key={ev.id}
                           style={{ padding: '8px 12px', textAlign: 'center' }}
                         >
                           <button
-                            onClick={() => toggleParticipant(ev.id, user.id, isIn)}
+                            onClick={() => toggleParticipant(ev.id, user.id, currentRole)}
                             style={{
-                              width: 28, height: 28,
-                              borderRadius: '50%',
-                              border: `2px solid ${isIn ? 'var(--green)' : 'var(--border)'}`,
-                              background: isIn ? 'rgba(34,201,122,0.15)' : 'var(--surface2)',
-                              color: isIn ? 'var(--green)' : 'var(--text-muted)',
-                              cursor: 'pointer', fontSize: 14,
+                              minWidth: 32, height: 28,
+                              borderRadius: 14,
+                              // MoC = blue, participant = green, none = grey
+                              border: `2px solid ${isMoCCell
+                                ? 'rgba(74,158,255,0.6)'
+                                : isParticipant
+                                  ? 'var(--green)'
+                                  : 'var(--border)'}`,
+                              background: isMoCCell
+                                ? 'rgba(74,158,255,0.15)'
+                                : isParticipant
+                                  ? 'rgba(34,201,122,0.15)'
+                                  : 'var(--surface2)',
+                              color: isMoCCell
+                                ? 'var(--blue)'
+                                : isParticipant
+                                  ? 'var(--green)'
+                                  : 'var(--text-muted)',
+                              cursor: 'pointer',
+                              fontSize: isMoCCell ? 13 : 11,
+                              fontWeight: 600,
                               display: 'flex', alignItems: 'center',
                               justifyContent: 'center',
-                              margin: '0 auto',
+                              margin: '0 auto', padding: '0 6px',
                               transition: 'all 0.15s',
                             }}
-                            title={isIn
-                              ? `Remove ${user.display_name} from ${ev.name}`
-                              : `Add ${user.display_name} to ${ev.name}`
-                            }
+                            title={isMoCCell
+                              ? `${user.display_name} is MoC for ${ev.name} — click to remove`
+                              : isParticipant
+                                ? `${user.display_name} is participating — click to remove`
+                                : `Add ${user.display_name} to ${ev.name}`}
                           >
-                            {isIn ? '✓' : '+'}
+                            {isMoCCell ? '🎙' : isParticipant ? '✓' : '+'}
                           </button>
                         </td>
                       );
@@ -480,7 +533,7 @@ export default function AdminUsers() {
             </table>
           </div>
 
-          {/* Empty state — no events or no users */}
+          {/* Empty states */}
           {matrix.events.length === 0 && (
             <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 16 }}>
               No events yet. Create events from the Admin page first.
@@ -505,19 +558,17 @@ export default function AdminUsers() {
   );
 }
 
-// ── Reusable modal wrapper ───────────────────────────────────
-// Renders a centered overlay with a card inside
-// onClose called when user clicks backdrop or cancel buttons
+// ── Reusable modal overlay ───────────────────────────────────
+// Clicking the dark backdrop calls onClose, same as Cancel buttons
 function Modal({ children, onClose }) {
   return (
     <div
       style={{
         position: 'fixed', inset: 0, zIndex: 200,
         background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 20,
+        display: 'flex', alignItems: 'center',
+        justifyContent: 'center', padding: 20,
       }}
-      // Click backdrop to close
       onClick={e => e.target === e.currentTarget && onClose()}
     >
       <div className="card fade-in" style={{ maxWidth: 400, width: '100%' }}>
@@ -527,7 +578,7 @@ function Modal({ children, onClose }) {
   );
 }
 
-// ── Table header style ───────────────────────────────────────
+// ── Shared table header style ────────────────────────────────
 const thStyle = {
   padding: '8px 12px',
   color: 'var(--text-muted)',

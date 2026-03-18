@@ -68,6 +68,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    participant_role TEXT NOT NULL DEFAULT 'participant',
     joined_at TEXT DEFAULT (datetime('now')),
     UNIQUE(event_id, user_id)
   );
@@ -83,12 +84,21 @@ db.exec(`
   );
 `);
 
-// Migrate existing picks to participants
+// ── Migrations ───────────────────────────────────────────────
+
+// Seed participants from existing picks if table was empty
 const participantCount = db.prepare('SELECT COUNT(*) as c FROM event_participants').get().c;
 if (participantCount === 0) {
   const existingPicks = db.prepare('SELECT DISTINCT user_id, event_id FROM picks').all();
   const insert = db.prepare('INSERT OR IGNORE INTO event_participants (event_id, user_id) VALUES (?, ?)');
   db.transaction(() => { for (const p of existingPicks) insert.run(p.event_id, p.user_id); })();
+}
+
+// Add participant_role column if it doesn't exist yet (for existing installs)
+const cols = db.prepare("PRAGMA table_info(event_participants)").all();
+if (!cols.find(c => c.name === 'participant_role')) {
+  db.exec("ALTER TABLE event_participants ADD COLUMN participant_role TEXT NOT NULL DEFAULT 'participant'");
+  console.log('Migrated: added participant_role to event_participants');
 }
 
 module.exports = db;
