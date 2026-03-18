@@ -44,6 +44,7 @@ export const api = {
   createUser: (data) => request('POST', '/admin/users', data),
   resetPassword: (id, password) => request('PUT', `/admin/users/${id}/password`, { password }),
   deleteUser: (id) => request('DELETE', `/admin/users/${id}`),
+  updateUser: (id, data) => request('PUT', `/admin/users/${id}`, data),
 
   // Admin - Events
   createEvent: (data) => request('POST', '/admin/events', data),

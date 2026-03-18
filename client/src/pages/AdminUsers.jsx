@@ -9,6 +9,8 @@ export default function AdminUsers() {
   const [form, setForm] = useState({ username: '', password: '', display_name: '', role: 'user' });
   const [resetTarget, setResetTarget] = useState(null);
   const [newPassword, setNewPassword] = useState('');
+  const [editTarget, setEditTarget] = useState(null);
+  const [editForm, setEditForm] = useState({ username: '', display_name: '' });
   const { user: currentUser } = useAuth();
 
   const load = () => api.getUsers().then(setUsers).catch(console.error);
@@ -34,6 +36,23 @@ export default function AdminUsers() {
       toast.success('Password reset');
       setResetTarget(null);
       setNewPassword('');
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleEdit = (user) => {
+    setEditTarget(user.id);
+    setEditForm({ username: user.username, display_name: user.display_name });
+  };
+
+  const handleEditSave = async (e) => {
+    e.preventDefault();
+    try {
+      await api.updateUser(editTarget, editForm);
+      toast.success('User updated');
+      setEditTarget(null);
+      load();
     } catch (err) {
       toast.error(err.message);
     }
@@ -89,6 +108,7 @@ export default function AdminUsers() {
         </div>
       )}
 
+      {/* Reset Password Modal */}
       {resetTarget && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 200,
@@ -117,11 +137,47 @@ export default function AdminUsers() {
         </div>
       )}
 
+      {/* Edit User Modal */}
+      {editTarget && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 200,
+          background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+        }}>
+          <div className="card fade-in" style={{ maxWidth: 400, width: '100%' }}>
+            <h3 style={{ marginBottom: 16 }}>EDIT USER</h3>
+            <form onSubmit={handleEditSave}>
+              <div className="form-group">
+                <label className="label">Display Name</label>
+                <input
+                  autoFocus
+                  value={editForm.display_name}
+                  onChange={e => setEditForm(f => ({ ...f, display_name: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="label">Username</label>
+                <input
+                  value={editForm.username}
+                  onChange={e => setEditForm(f => ({ ...f, username: e.target.value }))}
+                  required
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" className="btn btn-ghost" onClick={() => setEditTarget(null)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {users.map(user => (
-          <div key={user.id} className="card" style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-          }}>
+          <div key={user.id} className="card" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontWeight: 600 }}>{user.display_name}</span>
@@ -133,6 +189,9 @@ export default function AdminUsers() {
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => handleEdit(user)}>
+                Edit
+              </button>
               <button className="btn btn-ghost btn-sm" onClick={() => setResetTarget(user.id)}>
                 Reset Password
               </button>

@@ -38,6 +38,27 @@ router.put('/users/:id/password', requireAdmin, async (req, res) => {
   res.json({ success: true });
 });
 
+// Update username / display name
+router.put('/users/:id', requireAdmin, (req, res) => {
+  const { username, display_name } = req.body;
+  if (!username && !display_name) {
+    return res.status(400).json({ error: 'Nothing to update' });
+  }
+  try {
+    db.prepare(`UPDATE users SET 
+      username = COALESCE(?, username),
+      display_name = COALESCE(?, display_name),
+      updated_at = datetime('now')
+      WHERE id = ?`
+    ).run(username ? username.toLowerCase() : null, display_name || null, req.params.id);
+    const user = db.prepare('SELECT id, username, display_name, role FROM users WHERE id = ?').get(req.params.id);
+    res.json(user);
+  } catch (e) {
+    if (e.message.includes('UNIQUE')) return res.status(400).json({ error: 'Username already taken' });
+    throw e;
+  }
+});
+
 // Delete user
 router.delete('/users/:id', requireAdmin, (req, res) => {
   if (parseInt(req.params.id) === req.user.id) {
