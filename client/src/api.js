@@ -27,6 +27,7 @@ export const api = {
   login: (username, password) => request('POST', '/auth/login', { username, password }),
   me: () => request('GET', '/auth/me'),
   setup: (data) => request('POST', '/auth/setup', data),
+  updateMe: (data) => request('PUT', '/auth/me', data),
 
   // Events
   getEvents: () => request('GET', '/events'),
@@ -34,6 +35,7 @@ export const api = {
   getLeaderboard: (id) => request('GET', `/events/${id}/leaderboard`),
   getMyPicks: (id) => request('GET', `/events/${id}/my-picks`),
   getAllPicks: (id) => request('GET', `/events/${id}/all-picks`),
+  getAllTimeStats: () => request('GET', '/events/stats/alltime'),
 
   // Picks
   savePick: (data) => request('POST', '/picks', data),
@@ -43,8 +45,8 @@ export const api = {
   getUsers: () => request('GET', '/admin/users'),
   createUser: (data) => request('POST', '/admin/users', data),
   resetPassword: (id, password) => request('PUT', `/admin/users/${id}/password`, { password }),
-  deleteUser: (id) => request('DELETE', `/admin/users/${id}`),
   updateUser: (id, data) => request('PUT', `/admin/users/${id}`, data),
+  deleteUser: (id) => request('DELETE', `/admin/users/${id}`),
 
   // Admin - Events
   createEvent: (data) => request('POST', '/admin/events', data),

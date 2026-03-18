@@ -4,6 +4,15 @@ export default function CategoryCard({ category, userPick, isLocked, onPick }) {
   const { nominees, correct_nominee_id } = category;
   const hasAnswer = correct_nominee_id != null;
 
+  const handleRandom = (e) => {
+    e.stopPropagation();
+    if (isLocked || !nominees.length) return;
+    const unpicked = nominees.filter(n => n.id !== userPick?.nominee_id);
+    const pool = unpicked.length > 0 ? unpicked : nominees;
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    onPick(category.id, pick.id);
+  };
+
   const getStatus = (nomineeId) => {
     if (!userPick || userPick.nominee_id !== nomineeId) return 'none';
     if (!hasAnswer) return 'pending';
@@ -11,25 +20,55 @@ export default function CategoryCard({ category, userPick, isLocked, onPick }) {
   };
 
   const statusColors = {
-    none: { bg: 'var(--surface2)', border: 'var(--border)', text: 'var(--text-dim)' },
-    pending: { bg: 'rgba(136,146,170,0.1)', border: 'rgba(136,146,170,0.4)', text: 'var(--text)' },
-    correct: { bg: 'rgba(34,201,122,0.12)', border: 'rgba(34,201,122,0.5)', text: 'var(--green)' },
-    wrong: { bg: 'rgba(232,66,66,0.1)', border: 'rgba(232,66,66,0.4)', text: 'var(--red)' },
+    none:    { bg: 'var(--surface2)',              border: 'var(--border)',               text: 'var(--text-dim)' },
+    pending: { bg: 'rgba(136,146,170,0.1)',         border: 'rgba(136,146,170,0.4)',        text: 'var(--text)' },
+    correct: { bg: 'rgba(34,201,122,0.12)',         border: 'rgba(34,201,122,0.5)',         text: 'var(--green)' },
+    wrong:   { bg: 'rgba(232,66,66,0.1)',           border: 'rgba(232,66,66,0.4)',          text: 'var(--red)' },
   };
 
   return (
     <div className="card fade-in" style={{ marginBottom: 16 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-        <h3 style={{
-          fontSize: '1.1rem',
-          color: 'var(--text)',
-          lineHeight: 1.2,
-        }}>{category.name}</h3>
-        {userPick && (
-          <span style={{ fontSize: 18, marginLeft: 8 }}>
-            {!hasAnswer ? '⚪' : userPick.nominee_id === correct_nominee_id ? '✅' : '❌'}
-          </span>
-        )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <h3 style={{ fontSize: '1.1rem', color: 'var(--text)', lineHeight: 1.2 }}>
+          {category.name}
+        </h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {!isLocked && (
+            <button
+              onClick={handleRandom}
+              title="Pick randomly"
+              style={{
+                background: 'var(--surface3)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius)',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                padding: '4px 8px',
+                fontSize: 15,
+                lineHeight: 1,
+                transition: 'all 0.15s',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.color = 'var(--blue)';
+                e.currentTarget.style.borderColor = 'var(--blue-dim)';
+                e.currentTarget.style.background = 'var(--blue-glow)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.color = 'var(--text-muted)';
+                e.currentTarget.style.borderColor = 'var(--border)';
+                e.currentTarget.style.background = 'var(--surface3)';
+              }}
+            >
+              🎲
+            </button>
+          )}
+          {userPick && (
+            <span style={{ fontSize: 18 }}>
+              {!hasAnswer ? '⚪' : userPick.nominee_id === correct_nominee_id ? '✅' : '❌'}
+            </span>
+          )}
+        </div>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -52,8 +91,6 @@ export default function CategoryCard({ category, userPick, isLocked, onPick }) {
                 color: colors.text,
                 cursor: isLocked ? 'default' : 'pointer',
                 transition: 'all 0.15s',
-                position: 'relative',
-                overflow: 'hidden',
               }}
               onMouseEnter={e => {
                 if (!isLocked && !isSelected) {
@@ -69,8 +106,7 @@ export default function CategoryCard({ category, userPick, isLocked, onPick }) {
               }}
             >
               <div style={{
-                width: 18, height: 18,
-                borderRadius: '50%',
+                width: 18, height: 18, borderRadius: '50%',
                 border: `2px solid ${isSelected ? colors.border : 'var(--border-bright)'}`,
                 background: isSelected ? colors.border : 'transparent',
                 flexShrink: 0,
